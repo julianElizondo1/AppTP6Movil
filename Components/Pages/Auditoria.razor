@@ -1,0 +1,294 @@
+﻿@page "/auditoria"
+
+@using AppTP6Movil.Services
+@using System.Text.Json
+
+@inject AppTP6Movil.Services.SesionService Sesion
+@inject RegistroService Registro
+
+<h3 class="mb-4">
+    <i class="bi bi-clipboard-data me-2"></i>
+    Auditoría y registros
+</h3>
+
+@if (Sesion.Rol != "Admin")
+{
+    <div class="alert alert-danger">
+        <i class="bi bi-shield-lock me-2"></i>
+        No tenés permisos para acceder a esta sección.
+    </div>
+}
+else if (cargando)
+{
+    <div class="text-center my-4">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-2">Cargando registros...</p>
+    </div>
+}
+else
+{
+    @if (!string.IsNullOrEmpty(mensajeError))
+    {
+        <div class="alert alert-danger">
+            @mensajeError
+        </div>
+    }
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Total de registros</h6>
+                    <h3>@registros.Count</h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Auditorías</h6>
+                    <h3 class="text-primary">
+                        @registros.Count(r => r.Tipo == "AUDITORIA")
+                    </h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Errores</h6>
+                    <h3 class="text-danger">
+                        @registros.Count(r => r.Tipo == "ERROR")
+                    </h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <h5 class="card-title mb-3">
+                <i class="bi bi-funnel me-2"></i>
+                Filtros
+            </h5>
+
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <label class="form-label">Buscar</label>
+                    <input class="form-control"
+                           @bind="busqueda"
+                           @bind:event="oninput"
+                           placeholder="Usuario, operación o detalle..." />
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label">Tipo de registro</label>
+                    <select class="form-select" @bind="tipoFiltro">
+                        <option value="TODOS">Todos</option>
+                        <option value="AUDITORIA">Auditorías</option>
+                        <option value="ERROR">Errores</option>
+                    </select>
+                </div>
+
+                <div class="col-md-3 d-flex align-items-end">
+                    <button class="btn btn-outline-secondary w-100"
+                            @onclick="LimpiarFiltros">
+                        <i class="bi bi-x-circle me-2"></i>
+                        Limpiar filtros
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <span>
+            Resultados encontrados:
+            <strong>@RegistrosFiltrados.Count()</strong>
+        </span>
+
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary"
+                    @onclick="CargarRegistros">
+                <i class="bi bi-arrow-clockwise me-2"></i>
+                Actualizar
+            </button>
+
+            <button class="btn btn-success"
+                    @onclick="ExportarRegistros"
+                    disabled="@(!RegistrosFiltrados.Any())">
+                <i class="bi bi-download me-2"></i>
+                Exportar
+            </button>
+        </div>
+    </div>
+
+    @if (!RegistrosFiltrados.Any())
+    {
+        <div class="alert alert-info">
+            No se encontraron registros con los filtros seleccionados.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Tipo</th>
+                        <th>Usuario</th>
+                        <th>Operación</th>
+                        <th>Detalle</th>
+                        <th>Resultado</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    @foreach (var registro in RegistrosFiltrados)
+                    {
+                        <tr>
+                            <td class="text-nowrap">
+                                @registro.Fecha.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+                            </td>
+
+                            <td>
+                                @if (registro.Tipo == "ERROR")
+                                {
+                                    <span class="badge bg-danger">ERROR</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-primary">AUDITORÍA</span>
+                                }
+                            </td>
+
+                            <td>@registro.Usuario</td>
+
+                            <td>@registro.Accion</td>
+
+                            <td style="min-width: 180px; max-width: 300px; overflow-wrap: anywhere;">
+                                @registro.Detalle
+                            </td>
+
+                            <td style="min-width: 150px; max-width: 300px; overflow-wrap: anywhere;">
+                                @if (registro.Tipo == "ERROR")
+                                {
+                                    <details>
+                                        <summary class="text-danger" style="cursor:pointer">
+                                            Ver detalle técnico
+                                        </summary>
+                                        <pre class="mt-2 small text-wrap">@registro.Resultado</pre>
+                                    </details>
+                                }
+                                else
+                                {
+                                    @registro.Resultado
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private List<RegistroLog> registros = new();
+
+    private bool cargando = true;
+
+    private string busqueda = string.Empty;
+    private string tipoFiltro = "TODOS";
+    private string mensajeError = string.Empty;
+
+    private IEnumerable<RegistroLog> RegistrosFiltrados =>
+        registros.Where(r =>
+            (tipoFiltro == "TODOS" || r.Tipo == tipoFiltro) &&
+            (
+                string.IsNullOrWhiteSpace(busqueda) ||
+                (r.Usuario ?? "").Contains(busqueda, StringComparison.OrdinalIgnoreCase) ||
+                (r.Accion ?? "").Contains(busqueda, StringComparison.OrdinalIgnoreCase) ||
+                (r.Detalle ?? "").Contains(busqueda, StringComparison.OrdinalIgnoreCase)
+            )
+        );
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Sesion.Rol == "Admin")
+        {
+            await CargarRegistros();
+        }
+        else
+        {
+            cargando = false;
+        }
+    }
+
+    private async Task CargarRegistros()
+    {
+        try
+        {
+            cargando = true;
+            mensajeError = string.Empty;
+
+            registros = await Registro.ObtenerRegistrosAsync();
+        }
+        catch (Exception ex)
+        {
+            mensajeError = $"No se pudieron cargar los registros: {ex.Message}";
+            Console.WriteLine(ex);
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private void LimpiarFiltros()
+    {
+        busqueda = string.Empty;
+        tipoFiltro = "TODOS";
+    }
+
+    private async Task ExportarRegistros()
+    {
+        try
+        {
+            var opciones = new JsonSerializerOptions
+            {
+                WriteIndented = true
+            };
+
+            var contenido = JsonSerializer.Serialize(
+                RegistrosFiltrados.ToList(),
+                opciones
+            );
+
+            var nombreArchivo =
+                $"Auditoria_{DateTime.Now:yyyyMMdd_HHmmss}.json";
+
+            var rutaArchivo = Path.Combine(
+                FileSystem.CacheDirectory,
+                nombreArchivo
+            );
+
+            await File.WriteAllTextAsync(rutaArchivo, contenido);
+
+            await Share.Default.RequestAsync(
+                new ShareFileRequest
+                {
+                    Title = "Exportar registros de auditoría",
+                    File = new ShareFile(rutaArchivo)
+                }
+            );
+        }
+        catch (Exception ex)
+        {
+            mensajeError = $"Error al exportar los registros: {ex.Message}";
+        }
+    }
+}

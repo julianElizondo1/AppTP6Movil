@@ -1,0 +1,161 @@
+﻿@implements IDisposable
+@inject AppTP6Movil.Services.SesionService Sesion
+@inject AppTP6Movil.Services.CarritoService Carrito
+@inject NavigationManager Navigation
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">AppTP6Movil</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="flex-column">
+
+        @if (Sesion.EstaAutenticado)
+        {
+            <div class="nav-item px-3">
+                <span class="nav-link">
+                    <i class="bi bi-person-circle me-2" aria-hidden="true"></i>
+                    @Sesion.Username
+                </span>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="productos">
+                    <i class="bi bi-box-seam me-2" aria-hidden="true"></i>
+                    Productos
+                </NavLink>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="carrito">
+                    <i class="bi bi-cart3 me-1"></i>
+                    Carrito
+
+                    @if (Carrito.CantidadTotal > 0)
+                    {
+                        <span class="badge rounded-pill bg-danger ms-1">
+                            @Carrito.CantidadTotal
+                        </span>
+                    }
+                </NavLink>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="historial">
+                    <i class="bi bi-receipt me-1"></i>
+                    Historial de compras
+                </NavLink>
+            </div>
+
+            @if (Sesion.Rol == "Admin")
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="proveedores">
+                        <i class="bi bi-truck me-2" aria-hidden="true"></i>
+                        Proveedores
+                    </NavLink>
+                </div>
+
+                <div class="nav-item px-3">
+                    <button class="nav-link btn btn-link w-100 text-start"
+                            @onclick="() => reportesAbierto = !reportesAbierto">
+
+                        <i class="bi bi-bar-chart-line me-2"></i>
+                        Reportes
+
+                        <i class="bi @(reportesAbierto ? "bi-chevron-up" : "bi-chevron-down") ms-2"></i>
+                    </button>
+
+                    @if (reportesAbierto)
+                    {
+                        <div class="ps-4">
+
+                            <div class="nav-item">
+                                <NavLink class="nav-link" href="stockdisponible">
+                                    <i class="bi bi-box-seam me-2"></i>
+                                    Stock disponible
+                                </NavLink>
+                            </div>
+
+                            <div class="nav-item">
+                                <NavLink class="nav-link" href="ingresos">
+                                    <i class="bi bi-box-arrow-in-down me-2"></i>
+                                    Ingresos
+                                </NavLink>
+                            </div>
+
+                        </div>
+                    }
+                </div>
+
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="auditoria">
+                        <i class="bi bi-clipboard-data me-2"></i>
+                        Auditoría y registros
+                    </NavLink>
+                </div>
+            }
+
+            <div class="nav-item px-3">
+                <button class="nav-link btn btn-link" @onclick="CerrarSesion">
+                    <i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>
+                    Cerrar sesión
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="login">
+                    <i class="bi bi-box-arrow-in-right me-2" aria-hidden="true"></i>
+                    Iniciar sesión
+                </NavLink>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="registro">
+                    <i class="bi bi-person-plus me-2" aria-hidden="true"></i>
+                    Registrarse
+                </NavLink>
+            </div>
+        }
+
+    </nav>
+</div>
+
+@code {
+
+    private bool reportesAbierto = false;
+
+    protected override void OnInitialized()
+    {
+        Sesion.EstadoSesionCambiado += ActualizarMenu;
+        Carrito.CarritoActualizado += ActualizarCarrito;
+    }
+
+    private void ActualizarMenu()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void CerrarSesion()
+    {
+        Sesion.CerrarSesion();
+        Navigation.NavigateTo("/login");
+    }
+
+    public void Dispose()
+    {
+        Sesion.EstadoSesionCambiado -= ActualizarMenu;
+        Carrito.CarritoActualizado -= ActualizarCarrito;
+    }
+
+    private void ActualizarCarrito()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+}

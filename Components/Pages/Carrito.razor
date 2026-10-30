@@ -1,0 +1,316 @@
+﻿@page "/carrito"
+@using System.Net
+@using System.Net.Http.Headers
+@using System.Net.Http.Json
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@using AppTP6Movil.Models
+@using AppTP6Movil.Services
+@inject CarritoService ServicioCarrito
+@inject SesionService Sesion
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Mi carrito</PageTitle>
+
+<div class="container py-4">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h2><i class="bi bi-cart3 me-2"></i>Mi carrito</h2>
+        <button class="btn btn-outline-secondary"
+                @onclick="VolverAProductos">
+            <i class="bi bi-arrow-left me-1"></i>
+            Seguir comprando
+        </button>
+    </div>
+
+    @if (ServicioCarrito.Items.Count == 0)
+    {
+        <div class="alert alert-info text-center py-5">
+            <i class="bi bi-cart-x fs-1 d-block mb-3"></i>
+            <h4>Tu carrito está vacío</h4>
+            <p>Agregá productos desde nuestro catálogo.</p>
+            <button class="btn btn-primary" @onclick="VolverAProductos">
+                Ver productos
+            </button>
+        </div>
+    }
+    else
+    {
+        @if (!string.IsNullOrWhiteSpace(mensaje))
+        {
+            <div class="alert @(compraExitosa ? "alert-success" : "alert-danger") alert-dismissible">
+                @mensaje
+                <button type="button" class="btn-close"
+                    @onclick="CerrarMensaje"></button>
+            </div>
+        }
+
+        <div class="row g-4">
+            <div class="col-lg-8">
+                @foreach (var item in ServicioCarrito.Items)
+                {
+                    <div class="card mb-3 shadow-sm">
+                        <div class="card-body">
+                            <div class="row align-items-center g-3">
+                                <div class="col-4 col-md-3">
+                                    @if (!string.IsNullOrWhiteSpace(item.Producto.ImagenUrl))
+                                    {
+                                        <img src="@ObtenerUrlImagen(item.Producto.ImagenUrl)"
+                                             class="img-fluid rounded"
+                                             style="height:110px; width:100%; object-fit:contain;"
+                                             alt="@item.Producto.Nombre" />
+                                    }
+                                    else
+                                    {
+                                        <div class="bg-light rounded d-flex align-items-center justify-content-center"
+                                             style="height:110px;">
+                                            <i class="bi bi-image text-secondary fs-1"></i>
+                                        </div>
+                                    }
+                                </div>
+
+                                <div class="col-8 col-md-5">
+                                    <h5>@item.Producto.Nombre</h5>
+                                    <p class="text-muted mb-1">
+                                        Precio unitario:
+                                        @item.Producto.Precio.ToString("C2")
+                                    </p>
+                                    <strong>
+                                        Subtotal: @item.Subtotal.ToString("C2")
+                                    </strong>
+                                </div>
+
+                                <div class="col-8 col-md-3">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <button class="btn btn-outline-secondary btn-sm"
+                                                @onclick="() => CambiarCantidad(item, -1)">
+                                            <i class="bi bi-dash"></i>
+                                        </button>
+
+                                        <span class="fw-bold">@item.Cantidad</span>
+
+                                        <button class="btn btn-outline-secondary btn-sm"
+                                                disabled="@(item.Cantidad >= item.Producto.Stock)"
+                                                @onclick="() => CambiarCantidad(item, 1)">
+                                            <i class="bi bi-plus"></i>
+                                        </button>
+                                    </div>
+                                    <small class="text-muted">
+                                        Stock disponible: @item.Producto.Stock
+                                    </small>
+                                </div>
+
+                                <div class="col-4 col-md-1 text-end">
+                                    <button class="btn btn-outline-danger btn-sm"
+                                            title="Eliminar producto"
+                                            @onclick="() => ServicioCarrito.Quitar(item.Producto.Id)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <button class="btn btn-outline-danger"
+                        @onclick="ServicioCarrito.Vaciar">
+                    <i class="bi bi-trash me-1"></i>
+                    Vaciar carrito
+                </button>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h4 class="mb-3">Resumen de compra</h4>
+
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Productos:</span>
+                            <span>@ServicioCarrito.CantidadTotal</span>
+                        </div>
+
+                        <div class="d-flex justify-content-between mb-3">
+                            <strong>Total:</strong>
+                            <strong class="fs-4 text-primary">
+                                @ServicioCarrito.Total.ToString("C2")
+                            </strong>
+                        </div>
+
+                        <hr />
+
+                        <label class="form-label fw-bold">
+                            Medio de pago
+                        </label>
+
+                        <select class="form-select mb-2"
+                                @bind="medioPago">
+                            <option value="">Seleccioná un medio de pago</option>
+                            <option value="Efectivo">Efectivo (al retirar)</option>
+                            <option value="Debito">Tarjeta de débito</option>
+                            <option value="Credito">Tarjeta de crédito</option>
+                            <option value="Transferencia">Transferencia bancaria</option>
+                        </select>
+
+                        <small class="text-muted d-block mb-3">
+                            Los medios de pago son demostrativos.
+                            No se realizará ningún cobro real.
+                        </small>
+
+                        <button class="btn btn-primary w-100"
+                                disabled="@(procesando || string.IsNullOrEmpty(medioPago))"
+                                @onclick="FinalizarCompra">
+                            @if (procesando)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                <span>Procesando...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-check-circle me-2"></i>
+                                <span>Finalizar compra</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private string medioPago = "";
+    private string mensaje = "";
+    private bool procesando = false;
+    private bool compraExitosa = false;
+
+    private void CerrarMensaje()
+    {
+        mensaje = string.Empty;
+    }
+
+    private void VolverAProductos()
+    {
+        Navigation.NavigateTo("/productos");
+    }
+
+    private void CambiarCantidad(ItemCarrito item, int cambio)
+    {
+        ServicioCarrito.CambiarCantidad(
+            item.Producto.Id,
+            item.Cantidad + cambio
+        );
+    }
+
+    private string ObtenerUrlImagen(string? imagenUrl)
+    {
+        if (string.IsNullOrWhiteSpace(imagenUrl))
+            return "";
+
+        if (Uri.TryCreate(imagenUrl, UriKind.Absolute, out _))
+            return imagenUrl;
+
+        return new Uri(Http.BaseAddress!, imagenUrl).ToString();
+    }
+
+    private async Task FinalizarCompra()
+    {
+        if (ServicioCarrito.Items.Count == 0 || string.IsNullOrEmpty(medioPago))
+            return;
+
+        procesando = true;
+        mensaje = "";
+        compraExitosa = false;
+
+        try
+        {
+            var solicitud = new CrearVentaDTO
+            {
+                Detalles = ServicioCarrito.Items.Select(item => new CrearDetalleVentaDTO
+                {
+                    ProductoId = item.Producto.Id,
+                    Cantidad = item.Cantidad
+                }).ToList()
+            };
+
+            Http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", Sesion.Token);
+
+            var respuesta = await Http.PostAsJsonAsync(
+                "api/Ventas", solicitud);
+
+            if (respuesta.IsSuccessStatusCode)
+            {
+                var venta = await respuesta.Content.ReadFromJsonAsync<VentaRespuestaDTO>();
+
+                if (venta == null)
+                {
+                    mensaje = "La compra se registró, pero no se pudo leer la respuesta del servidor.";
+                    return;
+                }
+
+                ServicioCarrito.Vaciar();
+
+                compraExitosa = true;
+                mensaje = $"¡Compra realizada correctamente! " +
+                          $"Número de venta: {venta.Id}. " +
+                          $"Total: {venta.Total.ToString("C2")}. " +
+                          $"Medio de pago seleccionado: {medioPago}.";
+
+                medioPago = "";
+
+                await JS.InvokeVoidAsync("Swal.fire", new
+                {
+                    title = "¡Compra realizada con éxito!",
+                    text = $"Tu compra #{venta.Id} se registró correctamente. Total: {venta.Total:C}",
+                    icon = "success",
+                    confirmButtonText = "¡Genial!",
+                    confirmButtonColor = "#198754"
+                });
+            }
+            else
+            {
+                var error = await respuesta.Content.ReadAsStringAsync();
+
+                if (respuesta.StatusCode == HttpStatusCode.Conflict)
+                    mensaje = $"No se pudo completar la compra: {error}";
+                else if (respuesta.StatusCode == HttpStatusCode.Unauthorized)
+                    mensaje = "Tu sesión expiró. Volvé a iniciar sesión.";
+                else
+                    mensaje = $"Error al realizar la compra: {error}";
+            }
+        }
+        catch (Exception ex)
+        {
+            mensaje = $"No se pudo conectar con el servidor: {ex.Message}";
+        }
+        finally
+        {
+            procesando = false;
+        }
+    }
+
+    public class CrearVentaDTO
+    {
+        [JsonPropertyName("detalles")]
+        public List<CrearDetalleVentaDTO> Detalles { get; set; } = new();
+    }
+
+    public class CrearDetalleVentaDTO
+    {
+        [JsonPropertyName("productoId")]
+        public int ProductoId { get; set; }
+
+        [JsonPropertyName("cantidad")]
+        public int Cantidad { get; set; }
+    }
+
+    public class VentaRespuestaDTO
+    {
+        [JsonPropertyName("id")]
+        public int Id { get; set; }
+
+        [JsonPropertyName("total")]
+        public decimal Total { get; set; }
+    }
+}

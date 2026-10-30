@@ -1,0 +1,61 @@
+﻿@using AppTP6Movil.Models
+
+<EditForm Model="proveedor" OnValidSubmit="Guardar">
+    <DataAnnotationsValidator />
+
+    <div class="mb-3">
+        <label class="form-label">Nombre</label>
+        <InputText class="form-control" @bind-Value="proveedor.Nombre" />
+        <ValidationMessage For="@(() => proveedor.Nombre)" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Email</label>
+        <InputText class="form-control" @bind-Value="proveedor.Email" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Teléfono</label>
+        <InputText class="form-control" @bind-Value="proveedor.Telefono" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Dirección</label>
+        <InputText class="form-control" @bind-Value="proveedor.Direccion" />
+    </div>
+
+    <button type="submit" class="btn btn-primary">
+        @(EsEdicion ? "Guardar cambios" : "Guardar proveedor")
+    </button>
+</EditForm>
+
+@code {
+    [Parameter]
+    public Proveedor? ProveedorEditar { get; set; }
+
+    [Parameter]
+    public EventCallback<Proveedor> OnGuardar { get; set; }
+
+    private Proveedor proveedor = new();
+
+    private bool EsEdicion => ProveedorEditar != null;
+
+    protected override void OnParametersSet()
+    {
+        proveedor = ProveedorEditar != null
+            ? new Proveedor
+            {
+                Id = ProveedorEditar.Id,
+                Nombre = ProveedorEditar.Nombre,
+                Email = ProveedorEditar.Email,
+                Telefono = ProveedorEditar.Telefono,
+                Direccion = ProveedorEditar.Direccion
+            }
+            : new Proveedor();
+    }
+
+    private async Task Guardar()
+    {
+        await OnGuardar.InvokeAsync(proveedor);
+    }
+}

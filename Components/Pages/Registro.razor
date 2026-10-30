@@ -1,0 +1,159 @@
+﻿@page "/registro"
+@using System.Net.Http.Json
+@using System.Text.Json.Serialization
+@using AppTP6Movil.Services
+@inject HttpClient Http
+@inject SesionService Sesion
+@inject NavigationManager Navigation
+
+<PageTitle>Crear cuenta</PageTitle>
+
+<h3>Crear una cuenta</h3>
+
+<div style="max-width: 400px;">
+
+    <div class="mb-3">
+        <label class="form-label">Nombre de usuario</label>
+        <input class="form-control"
+               @bind="username"
+               autocomplete="username" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Correo electrónico</label>
+        <input class="form-control"
+               type="email"
+               @bind="email"
+               autocomplete="email" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Contraseña</label>
+        <input class="form-control"
+               type="password"
+               @bind="password"
+               autocomplete="new-password" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Confirmar contraseña</label>
+        <input class="form-control"
+               type="password"
+               @bind="confirmarPassword"
+               autocomplete="new-password" />
+    </div>
+
+    <button class="btn btn-primary"
+            @onclick="Registrar"
+            disabled="@cargando">
+        @(cargando ? "Registrando..." : "Crear cuenta")
+    </button>
+
+    @if (!string.IsNullOrWhiteSpace(mensaje))
+    {
+        <p class="mt-3">@mensaje</p>
+    }
+
+</div>
+
+@code {
+    private string username = "";
+    private string email = "";
+    private string password = "";
+    private string confirmarPassword = "";
+
+    private string mensaje = "";
+    private bool cargando;
+
+    private async Task Registrar()
+    {
+        if (string.IsNullOrWhiteSpace(username) ||
+            string.IsNullOrWhiteSpace(email) ||
+            string.IsNullOrWhiteSpace(password) ||
+            string.IsNullOrWhiteSpace(confirmarPassword))
+        {
+            mensaje = "Completá todos los campos.";
+            return;
+        }
+
+        if (!System.Net.Mail.MailAddress.TryCreate(email, out _))
+        {
+            mensaje = "Ingresá un correo electrónico válido.";
+            return;
+        }
+
+        if (password != confirmarPassword)
+        {
+            mensaje = "Las contraseñas no coinciden.";
+            return;
+        }
+
+        cargando = true;
+        mensaje = "";
+
+        try
+        {
+            var respuesta = await Http.PostAsJsonAsync(
+                "api/Auth/registro",
+                new RegistroRequest(username, email, password));
+
+            if (respuesta.IsSuccessStatusCode)
+            {
+                var resultado =
+                    await respuesta.Content.ReadFromJsonAsync<AuthResponse>();
+
+                if (resultado is not null &&
+                    !string.IsNullOrWhiteSpace(resultado.Token))
+                {
+                    Sesion.GuardarSesion(
+                        resultado.Token,
+                        resultado.Username,
+                        resultado.Rol,
+                        new DateTimeOffset(
+                            resultado.Expiracion.Kind == DateTimeKind.Utc
+                                ? resultado.Expiracion
+                                : resultado.Expiracion.ToUniversalTime()));
+
+                    mensaje = "¡Cuenta creada correctamente!";
+
+                    Navigation.NavigateTo("/productos");
+                }
+                else
+                {
+                    mensaje = "La API no devolvió un token válido.";
+                }
+            }
+            else
+            {
+                var detalle = await respuesta.Content.ReadAsStringAsync();
+
+                mensaje = string.IsNullOrWhiteSpace(detalle)
+                    ? $"No se pudo completar el registro. Código: {(int)respuesta.StatusCode}."
+                    : detalle;
+            }
+        }
+        catch (HttpRequestException)
+        {
+            mensaje = "No se pudo conectar con la API.";
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            mensaje = "La respuesta de la API no tiene el formato esperado.";
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private record RegistroRequest(
+        [property: JsonPropertyName("username")] string Username,
+        [property: JsonPropertyName("email")] string Email,
+        [property: JsonPropertyName("password")] string Password);
+
+    private record AuthResponse(
+        [property: JsonPropertyName("token")] string Token,
+        [property: JsonPropertyName("username")] string Username,
+        [property: JsonPropertyName("rol")] string Rol,
+        [property: JsonPropertyName("expiracion")] DateTime Expiracion);
+}

@@ -1,0 +1,124 @@
+﻿@using AppTP6Movil.Models
+@using AppTP6Movil.Services
+@using System.Net.Http.Headers
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject SesionService Sesion
+
+<EditForm Model="producto" OnValidSubmit="Guardar">
+    <DataAnnotationsValidator />
+
+    <div class="mb-3">
+        <label class="form-label">Nombre</label>
+        <InputText class="form-control"
+                   @bind-Value="producto.Nombre" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Precio</label>
+        <InputNumber class="form-control"
+                     @bind-Value="producto.Precio" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Categoría</label>
+        <InputSelect class="form-select"
+                     @bind-Value="producto.CategoriaId">
+            <option value="0">Seleccionar categoría</option>
+
+            @foreach (var categoria in categorias)
+            {
+                <option value="@categoria.Id">
+                    @categoria.Nombre
+                </option>
+            }
+        </InputSelect>
+    </div>   
+
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-danger">
+            @error
+        </div>
+    }
+
+    <button type="submit" class="btn btn-primary"
+            disabled="@cargando">
+        @(EsEdicion ? "Guardar cambios" : "Crear producto")
+    </button>
+</EditForm>
+
+@code {
+    [Parameter]
+    public Producto? ProductoEditar { get; set; }
+
+    [Parameter]
+    public EventCallback<Producto> OnGuardar { get; set; }
+
+    private Producto producto = new();
+    private List<CategoriaProducto> categorias = new();
+
+    private bool cargando = false;
+    private string error = string.Empty;
+
+    private bool EsEdicion => ProductoEditar != null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarCategorias();
+    }
+
+    protected override void OnParametersSet()
+    {
+        producto = ProductoEditar != null
+            ? new Producto
+            {
+                Id = ProductoEditar.Id,
+                Nombre = ProductoEditar.Nombre,
+                Precio = ProductoEditar.Precio,
+                CategoriaId = ProductoEditar.CategoriaId,
+                ImagenUrl = ProductoEditar.ImagenUrl,
+                Stock = ProductoEditar.Stock
+            }
+            : new Producto();
+    }
+
+    private async Task CargarCategorias()
+    {
+        try
+        {
+            var token = Sesion.ObtenerTokenValido();
+
+            if (string.IsNullOrEmpty(token))
+            {
+                error = "La sesión expiró.";
+                return;
+            }
+
+            Http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+
+            categorias = await Http.GetFromJsonAsync<List<CategoriaProducto>>(
+                "api/Categorias") ?? new List<CategoriaProducto>();
+        }
+        catch
+        {
+            error = "No se pudieron cargar las categorías.";
+        }
+    }
+
+    private async Task Guardar()
+    {
+        cargando = true;
+        error = string.Empty;
+
+        try
+        {
+            await OnGuardar.InvokeAsync(producto);
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+}

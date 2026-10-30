@@ -1,0 +1,604 @@
+﻿@page "/productos"
+@using System.Net.Http.Headers
+@using System.Net.Http.Json
+@using AppTP6Movil.Models
+@using AppTP6Movil.Services
+@using AppTP6Movil.Components.Productos
+@inject HttpClient Http
+@inject SesionService Sesion
+@inject NavigationManager Navigation
+@inject CarritoService Carrito
+@inject IJSRuntime JS
+
+<PageTitle>Catálogo de productos</PageTitle>
+
+<h3 class="mb-4">Catálogo de productos</h3>
+
+@if (Sesion.Rol == "Admin")
+{
+    @if (!mostrarFormulario)
+    {
+        <button class="btn btn-primary mb-3"
+                @onclick="NuevoProducto">
+            <i class="bi bi-plus-circle me-1"></i>
+            Nuevo producto
+        </button>
+    }
+    else
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    @(productoSeleccionado == null
+                        ? "Nuevo producto"
+                        : "Editar producto")
+                </h5>
+            </div>
+
+            <div class="card-body">
+                <FormProducto
+                    ProductoEditar="productoSeleccionado"
+                    OnGuardar="GuardarProducto" />
+
+                <button class="btn btn-secondary mt-3"
+                        @onclick="CancelarFormulario">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    }
+}
+
+@if (!string.IsNullOrWhiteSpace(mensajeCarrito))
+{
+    <div class="alert alert-info">
+        @mensajeCarrito
+    </div>
+}
+
+@if (cargando)
+{
+    <p>Consultando productos...</p>
+}
+else if (!string.IsNullOrWhiteSpace(mensaje))
+{
+    <div class="alert alert-warning">
+        @mensaje
+    </div>
+
+    @if (!Sesion.EstaAutenticado)
+    {
+        <button class="btn btn-primary" @onclick="IrAlLogin">
+    Ir al inicio de sesión
+</button>
+
+<button class="btn btn-primary" @onclick="CargarProductos">
+    Reintentar
+</button>
+    }
+    else
+    {
+        <button class="btn btn-primary" @onclick="CargarProductos">
+            Reintentar
+        </button>
+    }
+}
+else if (productos.Count == 0)
+{
+    <p>La API no devolvió productos.</p>
+}
+else
+{
+    <div class="row g-3 mb-4">
+        <div class="col-md-7">
+            <input class="form-control"
+                   type="text"
+                   placeholder="Buscar producto..."
+                   @bind="busqueda"
+                   @bind:event="oninput" />
+        </div>
+
+        <div class="col-md-5">
+            <select class="form-select" @bind="categoriaSeleccionada">
+                <option value="">Todas las categorías</option>
+
+                @foreach (var categoria in Categorias)
+                {
+                    <option value="@categoria">@categoria</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <p class="text-muted">
+        Mostrando @ProductosFiltrados.Count de @productos.Count productos
+    </p>
+
+    @if (ProductosFiltrados.Count == 0)
+    {
+        <div class="alert alert-info">
+            No se encontraron productos con esos criterios.
+        </div>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var producto in ProductosFiltrados)
+            {
+                <div class="col-sm-6 col-lg-4" @key="producto.Id">
+                    <div class="card h-100 shadow-sm">
+
+                        <div class="bg-light d-flex align-items-center justify-content-center"
+                             style="height: 190px; overflow: hidden;">
+
+                            @if (!string.IsNullOrWhiteSpace(producto.ImagenUrl))
+                            {
+                                <img src="@ObtenerUrlImagen(producto.ImagenUrl)"
+                                     alt="@producto.Nombre"
+                                     style="width: 100%; height: 100%; object-fit: contain;" />                                
+                            }
+                            else
+                            {
+                                <div class="text-muted text-center">
+                                    <i class="bi bi-image fs-1"></i>
+                                    <p class="mb-0">Sin imagen</p>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="card-body d-flex flex-column">
+
+                            <h5 class="card-title">
+                                @producto.Nombre
+                            </h5>
+
+                            <p class="text-muted mb-2">
+                                @(producto.Categoria?.Nombre ?? "Sin categoría")
+                            </p>
+
+                            <h4 class="text-primary mb-3">
+                                @producto.Precio.ToString("C2",
+                                    System.Globalization.CultureInfo.GetCultureInfo("es-AR"))
+                            </h4>
+
+                            <div class="mt-auto">
+                                @if (producto.Stock > 0)
+                                {
+                                    <span class="badge bg-success">
+                                        Disponible
+                                    </span>
+
+                                    <p class="small text-muted mt-2">
+                                        Stock: @producto.Stock unidades
+                                    </p>
+
+                                    <button class="btn btn-primary w-100"
+                                            @onclick="() => AgregarAlCarrito(producto)">
+                                        <i class="bi bi-cart-plus me-2"></i>
+                                        Agregar al carrito
+                                    </button>
+                                    
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger">
+                                        Sin stock
+                                    </span>
+
+                                    <button class="btn btn-secondary w-100 mt-3" disabled>
+                                        Sin disponibilidad
+                                    </button>
+                                }
+                                @if (Sesion.Rol == "Admin")
+                                {
+                                    <div class="mt-2">
+                                        <button class="btn btn-warning btn-sm me-2"
+                                                @onclick="() => EditarProducto(producto)">
+                                            <i class="bi bi-pencil-square me-1"></i>
+                                            Editar
+                                        </button>
+
+                                        <button class="btn btn-danger btn-sm"
+                                                @onclick="() => EliminarProducto(producto)">
+                                            <i class="bi bi-trash me-1"></i>
+                                            Eliminar
+                                        </button>
+
+                                        <button class="btn btn-success btn-sm mt-2"
+                                                @onclick="() => AbrirIngresoStock(producto.Id)">
+                                            <i class="bi bi-box-arrow-in-down me-1"></i>
+                                            Ingresar stock
+                                        </button>
+
+                                        @if (productoParaIngreso == producto.Id)
+                                        {
+                                            <div class="mt-3 p-3 border rounded">
+                                                <h6>Ingreso de stock</h6>
+
+                                                <div class="mb-2">
+                                                    <label class="form-label">Proveedor</label>
+
+                                                    <InputSelect class="form-select" @bind-Value="proveedorSeleccionado">
+                                                        <option value="0">Seleccionar proveedor</option>
+
+                                                        @foreach (var proveedor in proveedores)
+                                                        {
+                                                            <option value="@proveedor.Id">
+                                                                @proveedor.Nombre
+                                                            </option>
+                                                        }
+                                                    </InputSelect>
+                                                </div>
+
+                                                <div class="mb-2">
+                                                    <label class="form-label">Cantidad</label>
+
+                                                    <InputNumber class="form-control"
+                                                                 @bind-Value="cantidadIngreso"
+                                                                 min="1" />
+                                                </div>
+
+                                                <button class="btn btn-success btn-sm"
+                                                        @onclick="() => ConfirmarIngresoStock(producto)">
+                                                    Confirmar ingreso
+                                                </button>
+
+                                                <button class="btn btn-secondary btn-sm ms-2"
+                                                        @onclick="CancelarIngresoStock">
+                                                    Cancelar
+                                                </button>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<Producto> productos = new();
+    private bool cargando;
+    private string mensaje = "";
+
+    private string busqueda = "";
+    private string categoriaSeleccionada = "";
+
+    private string mensajeCarrito = "";
+    private bool mostrarFormulario = false;
+    private Producto? productoSeleccionado;
+
+    private List<Proveedor> proveedores = new();
+
+    private int? productoParaIngreso;
+
+    private int proveedorSeleccionado = 0;
+
+    private int cantidadIngreso = 1;
+
+    private List<string> Categorias =>
+        productos
+            .Where(p => p.Categoria != null &&
+                        !string.IsNullOrWhiteSpace(p.Categoria.Nombre))
+            .Select(p => p.Categoria!.Nombre)
+            .Distinct()
+            .OrderBy(c => c)
+            .ToList();
+
+    private List<Producto> ProductosFiltrados =>
+        productos
+            .Where(p =>
+                p.Nombre.Contains(busqueda.Trim(),
+                    StringComparison.OrdinalIgnoreCase))
+            .Where(p =>
+                string.IsNullOrEmpty(categoriaSeleccionada) ||
+                p.Categoria?.Nombre == categoriaSeleccionada)
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarProductos();
+        await CargarProveedores();
+    }
+
+    private async Task CargarProductos()
+    {
+        cargando = true;
+        mensaje = "";
+
+        try
+        {
+            var token = Sesion.ObtenerTokenValido();
+
+            if (token is null)
+            {
+                mensaje = "La sesión no está activa o el token venció. Iniciá sesión nuevamente.";
+                productos.Clear();
+                return;
+            }
+
+            using var solicitud = new HttpRequestMessage(
+                HttpMethod.Get, "api/Productos");
+
+            solicitud.Headers.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+
+            using var respuesta = await Http.SendAsync(solicitud);
+
+            if (respuesta.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                Sesion.CerrarSesion();
+                productos.Clear();
+                mensaje = "La API rechazó la sesión. Iniciá sesión nuevamente.";
+                return;
+            }
+
+            if (respuesta.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                mensaje = "Tu usuario no tiene permisos para consultar los productos.";
+                return;
+            }
+
+            respuesta.EnsureSuccessStatusCode();
+
+            var resultado =
+                await respuesta.Content.ReadFromJsonAsync<List<Producto>>();
+
+            productos = resultado ?? new List<Producto>();
+        }
+        catch (HttpRequestException)
+        {
+            mensaje = "No se pudo consultar la API. Verificá tu conexión e intentá nuevamente.";
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            mensaje = "La respuesta de productos no tiene el formato esperado.";
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private string ObtenerUrlImagen(string? imagenUrl)
+    {
+        if (string.IsNullOrWhiteSpace(imagenUrl))
+            return "";
+
+        if (Uri.TryCreate(imagenUrl, UriKind.Absolute, out _))
+            return imagenUrl;
+
+        return new Uri(Http.BaseAddress!, imagenUrl).ToString();
+    }
+
+    private void AgregarAlCarrito(Producto producto)
+    {
+        var agregado = Carrito.Agregar(producto);
+
+        if (agregado)
+        {
+            mensajeCarrito = $"{producto.Nombre} agregado al carrito.";
+        }
+        else
+        {
+            mensajeCarrito = $"No hay más unidades disponibles de {producto.Nombre}.";
+        }
+    }
+    private void CerrarMensajeCarrito()
+    {
+        mensajeCarrito = string.Empty;
+    }
+    private void IrAlLogin()
+    {
+    Navigation.NavigateTo("/login");
+    }
+    private void NuevoProducto()
+    {
+        productoSeleccionado = null;
+        mostrarFormulario = true;
+    }
+
+    private void EditarProducto(Producto producto)
+    {
+        productoSeleccionado = producto;
+        mostrarFormulario = true;
+    }
+
+    private void CancelarFormulario()
+    {
+        mostrarFormulario = false;
+        productoSeleccionado = null;
+    }
+
+    private async Task GuardarProducto(Producto producto)
+    {
+        try
+        {
+            var token = Sesion.ObtenerTokenValido();
+
+            if (string.IsNullOrEmpty(token))
+            {
+                return;
+            }
+
+            Http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+
+            HttpResponseMessage respuesta;
+
+            if (productoSeleccionado == null)
+            {
+                // Crear un producto nuevo
+                respuesta = await Http.PostAsJsonAsync(
+                    "api/Productos", producto);
+            }
+            else
+            {
+                // Modificar un producto existente
+                respuesta = await Http.PutAsJsonAsync(
+                    $"api/Productos/{producto.Id}", producto);
+            }
+
+            if (respuesta.IsSuccessStatusCode)
+            {
+                CancelarFormulario();
+                await CargarProductos();
+            }
+            else
+            {
+                var detalle = await respuesta.Content.ReadAsStringAsync();
+
+                Console.WriteLine($"Error al guardar producto: {detalle}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task EliminarProducto(Producto producto)
+    {
+        try
+        {
+            // Pedir confirmación antes de eliminar
+            var confirmar = await JS.InvokeAsync<bool>(
+                "confirmarEliminacion", producto.Nombre);
+
+            if (!confirmar)
+            {
+                return;
+            }
+
+            var token = Sesion.ObtenerTokenValido();
+
+            if (string.IsNullOrEmpty(token))
+            {
+                return;
+            }
+
+            Http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+
+            var respuesta = await Http.DeleteAsync(
+                $"api/Productos/{producto.Id}");
+
+            if (respuesta.IsSuccessStatusCode)
+            {
+                await CargarProductos();
+            }
+            else
+            {
+                var detalle = await respuesta.Content.ReadAsStringAsync();
+
+                Console.WriteLine($"Error al eliminar producto: {detalle}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task CargarProveedores()
+    {
+        try
+        {
+            var token = Sesion.ObtenerTokenValido();
+
+            if (string.IsNullOrEmpty(token))
+            {
+                return;
+            }
+
+            Http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+
+            proveedores = await Http.GetFromJsonAsync<List<Proveedor>>(
+                "api/Proveedores"
+            ) ?? new List<Proveedor>();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error al cargar proveedores: {ex.Message}");
+        }
+    }
+
+    private void AbrirIngresoStock(int productoId)
+    {
+        productoParaIngreso = productoId;
+        proveedorSeleccionado = 0;
+        cantidadIngreso = 1;
+    }
+
+    private void CancelarIngresoStock()
+    {
+        productoParaIngreso = null;
+        proveedorSeleccionado = 0;
+        cantidadIngreso = 1;
+    }
+
+    private async Task ConfirmarIngresoStock(Producto producto)
+    {
+        // Validar proveedor
+        if (proveedorSeleccionado <= 0)
+        {
+            Console.WriteLine("Debe seleccionar un proveedor.");
+            return;
+        }
+
+        // Validar cantidad
+        if (cantidadIngreso <= 0)
+        {
+            Console.WriteLine("La cantidad debe ser mayor a cero.");
+            return;
+        }
+
+        try
+        {
+            var token = Sesion.ObtenerTokenValido();
+
+            if (string.IsNullOrEmpty(token))
+            {
+                return;
+            }
+
+            Http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+
+            var ingreso = new IngresoProductoRequest
+            {
+                ProductoId = producto.Id,
+                ProveedorId = proveedorSeleccionado,
+                Cantidad = cantidadIngreso
+            };
+
+            var respuesta = await Http.PostAsJsonAsync(
+                "api/IngresosProductos",
+                ingreso
+            );
+
+            if (respuesta.IsSuccessStatusCode)
+            {
+                CancelarIngresoStock();
+                await CargarProductos();
+            }
+            else
+            {
+                var detalle = await respuesta.Content.ReadAsStringAsync();
+
+                Console.WriteLine($"Error al registrar el ingreso: {detalle}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+    }
+}

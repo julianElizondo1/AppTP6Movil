@@ -1,0 +1,292 @@
+﻿@page "/stockdisponible"
+@using PdfSharpCore.Pdf
+@using PdfSharpCore.Drawing
+@using System.IO
+@using System.Net.Http.Headers
+@using System.Net.Http.Json
+@using AppTP6Movil.Models
+@inject HttpClient Http
+@inject AppTP6Movil.Services.SesionService Sesion
+@inject AppTP6Movil.Services.RegistroService Registro
+
+<PageTitle>Stock disponible</PageTitle>
+
+<div class="container mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3>
+                <i class="bi bi-box-seam me-2"></i>
+                Stock disponible
+            </h3>
+            <p class="text-muted mb-0">
+                Consulta las cantidades disponibles de cada producto.
+            </p>
+        </div>
+
+        <button class="btn btn-danger" @onclick="GenerarPDF">
+            <i class="bi bi-file-pdf me-2"></i>
+            Generar PDF
+        </button>
+    </div>
+
+    @if (productos == null)
+    {
+        <div class="text-center mt-5">
+            <div class="spinner-border text-primary"></div>
+            <p class="mt-2">Cargando productos...</p>
+        </div>
+    }
+    else if (productos.Count == 0)
+    {
+        <div class="alert alert-info">
+            No hay productos registrados.
+        </div>
+    }
+    else
+    {
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Producto</th>
+                            <th class="text-center">Stock disponible</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        @foreach (var producto in productos)
+                        {
+                            <tr>
+                                <td>@producto.Nombre</td>
+                                <td class="text-center">
+                                    <span class="badge bg-primary">
+                                        @producto.Stock
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+
+            </div>
+        </div>
+    }
+
+</div>
+
+@code {
+
+    private class RespuestaProductosPaginados
+    {
+        public int PageNumber { get; set; }
+        public int PageSize { get; set; }
+        public int TotalRegistros { get; set; }
+        public int TotalPaginas { get; set; }
+        public List<Producto>? Productos { get; set; }
+    }
+
+    private List<Producto>? productos;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarProductos();
+    }
+
+    private async Task CargarProductos()
+    {
+        try
+        {
+            var token = Sesion.ObtenerTokenValido();
+
+            if (string.IsNullOrEmpty(token))
+                return;
+
+            Http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+
+            productos = await Http.GetFromJsonAsync<List<Producto>>(
+                "api/Productos"
+            );
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error al cargar productos: {ex.Message}");
+            productos = new List<Producto>();
+
+            await Registro.RegistrarErrorAsync(
+                "Cargar stock disponible",
+                ex
+            );
+        }
+    }
+
+    private async Task GenerarPDF()
+    {
+        try
+        {
+            var productosReporte = await ObtenerTodosLosProductos();
+
+            await Registro.RegistrarAuditoriaAsync(
+                "Generar PDF",
+                $"Reporte de stock disponible. Productos incluidos: {productosReporte.Count}"
+            );
+
+            using var documento = new PdfDocument();
+
+            documento.Info.Title = "Reporte de Stock Disponible";
+
+            var pagina = documento.AddPage();
+            pagina.Size = PdfSharpCore.PageSize.A4;
+
+            using var gfx = XGraphics.FromPdfPage(pagina);
+
+            var titulo = new XFont("Arial", 20, XFontStyle.Bold);
+            var subtitulo = new XFont("Arial", 10, XFontStyle.Regular);
+            var encabezado = new XFont("Arial", 11, XFontStyle.Bold);
+            var texto = new XFont("Arial", 10, XFontStyle.Regular);
+
+            double y = 50;
+
+            // Título
+            gfx.DrawString(
+                "Reporte de Stock Disponible",
+                titulo,
+                XBrushes.Black,
+                new XRect(40, y, pagina.Width - 80, 30),
+                XStringFormats.TopLeft
+            );
+
+            y += 35;
+
+            // Fecha
+            gfx.DrawString(
+                $"Fecha de generación: {DateTime.Now:dd/MM/yyyy HH:mm}",
+                subtitulo,
+                XBrushes.Gray,
+                new XPoint(40, y)
+            );
+
+            y += 35;
+
+            // Encabezados
+            gfx.DrawString("Producto", encabezado, XBrushes.Black, new XPoint(40, y));
+            gfx.DrawString("Stock", encabezado, XBrushes.Black, new XPoint(450, y));
+
+            y += 10;
+
+            gfx.DrawLine(XPens.Black, 40, y, pagina.Width - 40, y);
+
+            y += 25;
+
+            // Productos
+            foreach (var producto in productosReporte)
+            {
+                if (y > pagina.Height - 70)
+                {
+                    pagina = documento.AddPage();
+                    pagina.Size = PdfSharpCore.PageSize.A4;
+
+                    gfx.Dispose();
+
+                    // Esta versión inicial trabaja con una sola página.
+                    break;
+                }
+
+                gfx.DrawString(
+                    producto.Nombre ?? "",
+                    texto,
+                    XBrushes.Black,
+                    new XPoint(40, y)
+                );
+
+                gfx.DrawString(
+                    producto.Stock.ToString(),
+                    texto,
+                    XBrushes.Black,
+                    new XPoint(450, y)
+                );
+
+                y += 25;
+            }
+
+            using var stream = new MemoryStream();
+
+            documento.Save(stream, false);
+
+            var archivo = Path.Combine(
+                FileSystem.CacheDirectory,
+                "StockDisponible.pdf"
+            );
+
+            await File.WriteAllBytesAsync(archivo, stream.ToArray());
+
+            await Share.Default.RequestAsync(new ShareFileRequest
+            {
+                Title = "Reporte de stock disponible",
+                File = new ShareFile(archivo, "application/pdf")
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error al generar PDF: {ex.Message}");
+
+            await Registro.RegistrarErrorAsync(
+                "Generar PDF de stock disponible",
+                ex
+            );
+        }
+    }
+
+    private async Task<List<Producto>> ObtenerTodosLosProductos()
+    {
+        var token = Sesion.ObtenerTokenValido();
+
+        if (string.IsNullOrEmpty(token))
+            throw new Exception("La sesión no está activa.");
+
+        var todosLosProductos = new List<Producto>();
+
+        int paginaActual = 1;
+        int totalPaginas = 1;
+
+        do
+        {
+            using var solicitud = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"api/Productos/paginado?pageNumber={paginaActual}&pageSize=100"
+            );
+
+            solicitud.Headers.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+
+            using var respuesta = await Http.SendAsync(solicitud);
+
+            if (respuesta.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                Sesion.CerrarSesion();
+                throw new Exception("La sesión venció. Iniciá sesión nuevamente.");
+            }
+
+            respuesta.EnsureSuccessStatusCode();
+
+            var resultado =
+                await respuesta.Content.ReadFromJsonAsync<RespuestaProductosPaginados>();
+
+            if (resultado == null)
+                throw new Exception("No se pudo interpretar la respuesta de la API.");
+
+            if (resultado.Productos != null)
+                todosLosProductos.AddRange(resultado.Productos);
+
+            totalPaginas = resultado.TotalPaginas;
+            paginaActual++;
+
+        } while (paginaActual <= totalPaginas);
+
+        return todosLosProductos;
+    }
+
+}
